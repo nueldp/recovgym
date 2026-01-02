@@ -111,7 +111,7 @@
                 setSelectedMuscle(m);
             };
 
-            // Fungsi Ekspor CSV yang Diperkuat
+            // Fungsi Ekspor CSV yang Lebih Stabil untuk Chromebook/Mobile
             const exportToCSV = () => {
                 if (workouts.length === 0) return;
                 
@@ -120,33 +120,29 @@
                     w.id,
                     w.muscle,
                     w.intensity,
-                    `"${new Date(w.endTime).toLocaleString('id-ID')}"` // Bungkus petik untuk keamanan koma
+                    `"${new Date(w.endTime).toLocaleString('id-ID')}"`
                 ]);
 
-                const csvContent = [
+                // Menambahkan UTF-8 BOM agar Excel/Chromebook tidak salah baca format
+                const csvContent = "\uFEFF" + [
                     headers.join(","),
                     ...rows.map(e => e.join(","))
                 ].join("\n");
 
-                // Gunakan Blob agar lebih kompatibel dengan sandbox/iframe
                 const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
                 const url = URL.createObjectURL(blob);
                 
-                const link = document.createElement("a");
-                link.setAttribute("href", url);
-                link.setAttribute("download", `RecovGym_Log_${new Date().toISOString().split('T')[0]}.csv`);
-                document.body.appendChild(link);
+                const link = document.body.appendChild(document.createElement("a"));
+                link.href = url;
+                link.download = `RecovGym_Log_${new Date().toLocaleDateString('id-ID').replace(/\//g, '-')}.csv`;
                 
-                try {
-                    link.click();
-                } catch (err) {
-                    console.error("Export failed:", err);
-                } finally {
-                    setTimeout(() => {
-                        document.body.removeChild(link);
-                        URL.revokeObjectURL(url);
-                    }, 100);
-                }
+                // Menunggu sejenak sebelum 'klik' dan revoking object
+                link.click();
+                
+                setTimeout(() => {
+                    URL.revokeObjectURL(url);
+                    link.remove();
+                }, 500);
             };
 
             const filteredWorkouts = useMemo(() => {
@@ -168,7 +164,7 @@
                     <div className="p-6 pb-4 flex justify-between items-center border-b border-slate-50">
                         <div>
                             <h1 className="text-2xl font-black italic text-blue-600 tracking-tighter uppercase leading-none">RecovGym</h1>
-                            <p className="text-[10px] font-bold text-slate-400 tracking-widest uppercase mt-1">Salatiga Natural Fitness</p>
+                            <p className="text-[10px] font-bold text-slate-400 tracking-widest uppercase mt-1 italic">Train • Recover • Repeat</p>
                         </div>
                         <div className="bg-blue-600 p-2.5 rounded-2xl text-white shadow-lg">
                             <i data-lucide="shield-check" size="20"></i>
@@ -194,7 +190,7 @@
 
                                 <div className="grid gap-3">
                                     <div className="flex justify-between items-center px-1">
-                                        <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Kesiapan Otot</h3>
+                                        <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest italic">Kesiapan Otot</h3>
                                     </div>
                                     
                                     {MUSCLES.map(m => {
@@ -233,10 +229,10 @@
                                         <h2 className="text-2xl font-black italic text-slate-800 tracking-tight uppercase">Logbook</h2>
                                         <button 
                                             onClick={exportToCSV}
-                                            className="flex items-center gap-1.5 bg-green-600 text-white px-3 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest active:scale-95 transition-all shadow-md shadow-green-100"
+                                            className="flex items-center gap-1.5 bg-green-600 text-white px-3 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest active:scale-95 transition-all shadow-md"
                                         >
                                             <i data-lucide="download" size="14"></i>
-                                            Ekspor CSV
+                                            Simpan CSV
                                         </button>
                                     </div>
                                     
@@ -270,14 +266,14 @@
                                                     <div className={`w-1 h-8 rounded-full ${w.intensity === 'Berat' ? 'bg-red-500' : w.intensity === 'Sedang' ? 'bg-yellow-500' : 'bg-green-500'}`}></div>
                                                     <div>
                                                         <p className="font-bold text-slate-800 italic uppercase tracking-tight leading-none">{w.muscle}</p>
-                                                        <p className="text-[10px] text-slate-400 font-bold uppercase mt-1">
+                                                        <p className="text-[10px] text-slate-400 font-bold uppercase mt-1 leading-none tracking-tighter">
                                                             {w.intensity} • {new Date(w.endTime).toLocaleDateString('id-ID', {day:'numeric', month:'short'})} {new Date(w.endTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}
                                                         </p>
                                                     </div>
                                                 </div>
                                                 <div className="flex gap-1">
-                                                    <button onClick={() => setEditingWorkout(w)} className="p-2.5 text-slate-300 active:text-blue-500 transition-colors"><i data-lucide="edit-3" size="18"></i></button>
-                                                    <button onClick={() => setWorkouts(workouts.filter(x => x.id !== w.id))} className="p-2.5 text-slate-300 active:text-red-500 transition-colors"><i data-lucide="trash-2" size="18"></i></button>
+                                                    <button onClick={() => setEditingWorkout(w)} className="p-2.5 text-slate-200 active:text-blue-500 transition-colors"><i data-lucide="edit-3" size="18"></i></button>
+                                                    <button onClick={() => setWorkouts(workouts.filter(x => x.id !== w.id))} className="p-2.5 text-slate-200 active:text-red-500 transition-colors"><i data-lucide="trash-2" size="18"></i></button>
                                                 </div>
                                             </div>
                                         ))
@@ -312,7 +308,7 @@
                                     {['Ringan','Sedang','Berat'].map(l => (
                                         <button key={l} onClick={() => finishWorkout(l)} className="w-full p-5 rounded-[24px] border-2 border-slate-50 font-black text-slate-700 active:bg-blue-600 active:text-white transition-all flex justify-between items-center italic uppercase tracking-tight">
                                             {l}
-                                            <span className="text-[10px] font-normal opacity-40 italic uppercase">{RECOVERY_CONFIG[l].total}H Rec</span>
+                                            <span className="text-[10px] font-normal opacity-40 italic uppercase tracking-widest">{RECOVERY_CONFIG[l].total}H REC</span>
                                         </button>
                                     ))}
                                 </div>
