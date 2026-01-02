@@ -64,17 +64,43 @@
                 lucide.createIcons();
             }, [workouts, active, tab, editingWorkout, selectedMuscle, showIntensity, lockMessage, historyFilter]);
 
+            // Formatter Waktu Relatif (Cth: Besok 14:00)
+            const formatRecoveryTime = (date) => {
+                const now = new Date();
+                const isToday = date.toDateString() === now.toDateString();
+                const tomorrow = new Date(now);
+                tomorrow.setDate(tomorrow.getDate() + 1);
+                const isTomorrow = date.toDateString() === tomorrow.toDateString();
+                
+                const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                if (isToday) return `Hari ini ${timeStr}`;
+                if (isTomorrow) return `Besok ${timeStr}`;
+                return date.toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short' }) + ` ${timeStr}`;
+            };
+
             const getStatus = (m) => {
                 const muscleWorkouts = workouts.filter(w => w.muscle === m).sort((a,b) => b.endTime - a.endTime);
                 const last = muscleWorkouts[0];
                 if (!last) return { label: 'Optimal', color: 'text-green-500', dot: 'bg-green-500', h: null, isLocked: false };
                 
-                const hrs = (new Date() - new Date(last.endTime)) / 3600000;
+                const hrsSince = (new Date() - new Date(last.endTime)) / 3600000;
                 const cfg = RECOVERY_CONFIG[last.intensity] || RECOVERY_CONFIG['Sedang'];
                 
-                if (hrs < cfg.half) return { label: 'Recovery', color: 'text-red-500', dot: 'bg-red-500', h: Math.floor(hrs), isLocked: true };
-                if (hrs < cfg.total) return { label: 'Hampir Siap', color: 'text-yellow-600', dot: 'bg-yellow-500', h: Math.floor(hrs), isLocked: false };
-                return { label: 'Optimal', color: 'text-green-500', dot: 'bg-green-500', h: Math.floor(hrs), isLocked: false };
+                const canTrainAt = new Date(new Date(last.endTime).getTime() + cfg.half * 3600000);
+                const optimalAt = new Date(new Date(last.endTime).getTime() + cfg.total * 3600000);
+                
+                if (hrsSince < cfg.half) return { 
+                    label: 'Recovery', color: 'text-red-500', dot: 'bg-red-500', 
+                    h: Math.floor(hrsSince), isLocked: true,
+                    nextPhase: `Siap: ${formatRecoveryTime(canTrainAt)}`,
+                    optimalPhase: `Optimal: ${formatRecoveryTime(optimalAt)}`
+                };
+                if (hrsSince < cfg.total) return { 
+                    label: 'Hampir Siap', color: 'text-yellow-600', dot: 'bg-yellow-500', 
+                    h: Math.floor(hrsSince), isLocked: false,
+                    optimalPhase: `Optimal: ${formatRecoveryTime(optimalAt)}`
+                };
+                return { label: 'Optimal', color: 'text-green-500', dot: 'bg-green-500', h: Math.floor(hrsSince), isLocked: false };
             };
 
             const finishWorkout = (intensity) => {
@@ -104,45 +130,25 @@
 
             const handleMuscleClick = (m, status) => {
                 if (status.isLocked) {
-                    setLockMessage(`Otot ${m} masih recovery! Sabar, Coach.`);
+                    setLockMessage(`Otot ${m} masih recovery kritis!`);
                     setTimeout(() => setLockMessage(null), 3000);
                     return;
                 }
                 setSelectedMuscle(m);
             };
 
-            // Fungsi Ekspor CSV yang Lebih Stabil untuk Chromebook/Mobile
             const exportToCSV = () => {
                 if (workouts.length === 0) return;
-                
                 const headers = ['ID', 'Otot', 'Intensitas', 'Waktu Selesai'];
-                const rows = workouts.map(w => [
-                    w.id,
-                    w.muscle,
-                    w.intensity,
-                    `"${new Date(w.endTime).toLocaleString('id-ID')}"`
-                ]);
-
-                // Menambahkan UTF-8 BOM agar Excel/Chromebook tidak salah baca format
-                const csvContent = "\uFEFF" + [
-                    headers.join(","),
-                    ...rows.map(e => e.join(","))
-                ].join("\n");
-
+                const rows = workouts.map(w => [w.id, w.muscle, w.intensity, `"${new Date(w.endTime).toLocaleString('id-ID')}"`]);
+                const csvContent = "\uFEFF" + [headers.join(","), ...rows.map(e => e.join(","))].join("\n");
                 const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
                 const url = URL.createObjectURL(blob);
-                
                 const link = document.body.appendChild(document.createElement("a"));
                 link.href = url;
                 link.download = `RecovGym_Log_${new Date().toLocaleDateString('id-ID').replace(/\//g, '-')}.csv`;
-                
-                // Menunggu sejenak sebelum 'klik' dan revoking object
                 link.click();
-                
-                setTimeout(() => {
-                    URL.revokeObjectURL(url);
-                    link.remove();
-                }, 500);
+                setTimeout(() => { URL.revokeObjectURL(url); link.remove(); }, 500);
             };
 
             const filteredWorkouts = useMemo(() => {
@@ -201,21 +207,41 @@
                                                 onClick={() => handleMuscleClick(m, s)} 
                                                 className={`p-5 rounded-[24px] flex justify-between items-center border transition-all duration-300 ${
                                                     s.isLocked 
-                                                    ? 'bg-slate-50 border-transparent opacity-50' 
+                                                    ? 'bg-slate-50 border-transparent opacity-60' 
                                                     : 'bg-white border-slate-100 shadow-sm active:border-blue-100 active:bg-blue-50/30'
                                                 }`}
                                             >
-                                                <div className="flex items-center gap-4">
-                                                    <div className={`w-3 h-3 rounded-full ${s.dot} shadow-sm`}></div>
-                                                    <div className="text-left">
-                                                        <p className={`font-bold text-lg italic uppercase tracking-tighter ${s.isLocked ? 'text-slate-400' : 'text-slate-800'}`}>{m}</p>
+                                                <div className="flex items-center gap-4 w-full">
+                                                    <div className={`w-3 h-3 rounded-full flex-shrink-0 ${s.dot} shadow-sm`}></div>
+                                                    <div className="text-left flex-1">
+                                                        <div className="flex justify-between items-center">
+                                                            <p className={`font-bold text-lg italic uppercase tracking-tighter ${s.isLocked ? 'text-slate-400' : 'text-slate-800'}`}>{m}</p>
+                                                            <div className={`p-1.5 rounded-lg ${s.isLocked ? 'text-slate-300' : 'text-blue-500'}`}>
+                                                                <i data-lucide={s.isLocked ? "lock" : "plus"} size={14}></i>
+                                                            </div>
+                                                        </div>
                                                         <p className={`text-[10px] font-black uppercase ${s.color} tracking-tighter leading-none mt-0.5`}>
                                                             {s.label} {s.h !== null ? `• ${s.h}J Lalu` : ''}
                                                         </p>
+                                                        
+                                                        {/* Info Detail Recovery Baru */}
+                                                        { (s.nextPhase || s.optimalPhase) && (
+                                                            <div className="mt-3 space-y-1 bg-white/50 p-2 rounded-xl border border-slate-100/50">
+                                                                {s.nextPhase && (
+                                                                    <div className="flex items-center gap-1.5 text-slate-400">
+                                                                        <i data-lucide="unlock" size={10}></i>
+                                                                        <span className="text-[9px] font-bold uppercase tracking-tighter">{s.nextPhase}</span>
+                                                                    </div>
+                                                                )}
+                                                                {s.optimalPhase && (
+                                                                    <div className="flex items-center gap-1.5 text-blue-400">
+                                                                        <i data-lucide="zap" size={10}></i>
+                                                                        <span className="text-[9px] font-bold uppercase tracking-tighter">{s.optimalPhase}</span>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        )}
                                                     </div>
-                                                </div>
-                                                <div className={`p-2 rounded-xl shadow-sm ${s.isLocked ? 'bg-slate-100 text-slate-300' : 'bg-slate-50 text-blue-400'}`}>
-                                                    <i data-lucide={s.isLocked ? "lock" : "plus"} size={16}></i>
                                                 </div>
                                             </div>
                                         )
@@ -227,38 +253,21 @@
                                 <div className="p-5 space-y-4">
                                     <div className="flex justify-between items-center">
                                         <h2 className="text-2xl font-black italic text-slate-800 tracking-tight uppercase">Logbook</h2>
-                                        <button 
-                                            onClick={exportToCSV}
-                                            className="flex items-center gap-1.5 bg-green-600 text-white px-3 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest active:scale-95 transition-all shadow-md"
-                                        >
-                                            <i data-lucide="download" size="14"></i>
-                                            Simpan CSV
+                                        <button onClick={exportToCSV} className="flex items-center gap-1.5 bg-green-600 text-white px-3 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest active:scale-95 transition-all shadow-md">
+                                            <i data-lucide="download" size="14"></i> CSV
                                         </button>
                                     </div>
-                                    
                                     <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-2 -mx-1 px-1">
                                         {['Semua', ...MUSCLES].map(m => (
-                                            <button 
-                                                key={m}
-                                                onClick={() => setHistoryFilter(m)}
-                                                className={`px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest whitespace-nowrap border-2 transition-all ${
-                                                    historyFilter === m 
-                                                    ? 'bg-blue-600 border-blue-600 text-white shadow-lg' 
-                                                    : 'bg-white border-slate-100 text-slate-400'
-                                                }`}
-                                            >
+                                            <button key={m} onClick={() => setHistoryFilter(m)} className={`px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest whitespace-nowrap border-2 transition-all ${historyFilter === m ? 'bg-blue-600 border-blue-600 text-white shadow-lg' : 'bg-white border-slate-100 text-slate-400'}`}>
                                                 {m}
                                             </button>
                                         ))}
                                     </div>
                                 </div>
-
                                 <div className="px-5 space-y-3">
                                     {filteredWorkouts.length === 0 ? (
-                                        <div className="text-center py-20 opacity-20 italic font-bold uppercase text-[10px]">
-                                            <i data-lucide="database" size="40" className="mx-auto mb-2 opacity-50"></i>
-                                            <p>Data Kosong</p>
-                                        </div>
+                                        <div className="text-center py-20 opacity-20 italic font-bold uppercase text-[10px]"><i data-lucide="database" size="40" className="mx-auto mb-2 opacity-50"></i><p>Data Kosong</p></div>
                                     ) : (
                                         filteredWorkouts.map(w => (
                                             <div key={w.id} className="bg-white border border-slate-50 p-5 rounded-[24px] flex justify-between items-center shadow-sm">
@@ -266,14 +275,12 @@
                                                     <div className={`w-1 h-8 rounded-full ${w.intensity === 'Berat' ? 'bg-red-500' : w.intensity === 'Sedang' ? 'bg-yellow-500' : 'bg-green-500'}`}></div>
                                                     <div>
                                                         <p className="font-bold text-slate-800 italic uppercase tracking-tight leading-none">{w.muscle}</p>
-                                                        <p className="text-[10px] text-slate-400 font-bold uppercase mt-1 leading-none tracking-tighter">
-                                                            {w.intensity} • {new Date(w.endTime).toLocaleDateString('id-ID', {day:'numeric', month:'short'})} {new Date(w.endTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}
-                                                        </p>
+                                                        <p className="text-[10px] text-slate-400 font-bold uppercase mt-1 leading-none tracking-tighter">{w.intensity} • {new Date(w.endTime).toLocaleDateString('id-ID', {day:'numeric', month:'short'})} {new Date(w.endTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</p>
                                                     </div>
                                                 </div>
                                                 <div className="flex gap-1">
-                                                    <button onClick={() => setEditingWorkout(w)} className="p-2.5 text-slate-200 active:text-blue-500 transition-colors"><i data-lucide="edit-3" size="18"></i></button>
-                                                    <button onClick={() => setWorkouts(workouts.filter(x => x.id !== w.id))} className="p-2.5 text-slate-200 active:text-red-500 transition-colors"><i data-lucide="trash-2" size="18"></i></button>
+                                                    <button onClick={() => setEditingWorkout(w)} className="p-2.5 text-slate-300 active:text-blue-500"><i data-lucide="edit-3" size="18"></i></button>
+                                                    <button onClick={() => setWorkouts(workouts.filter(x => x.id !== w.id))} className="p-2.5 text-slate-300 active:text-red-500"><i data-lucide="trash-2" size="18"></i></button>
                                                 </div>
                                             </div>
                                         ))
@@ -289,7 +296,6 @@
                             <div className="bg-white w-full rounded-t-[40px] p-8 animate-slide-up" onClick={e => e.stopPropagation()}>
                                 <div className="w-12 h-1 bg-slate-100 rounded-full mx-auto mb-8"></div>
                                 <h3 className="text-3xl font-black italic text-slate-800 mb-2 uppercase tracking-tighter">Latih {selectedMuscle}?</h3>
-                                <p className="text-slate-400 text-xs mb-8 font-bold uppercase italic tracking-widest opacity-60">"Don't wish for it, work for it."</p>
                                 <button onClick={() => {
                                     if (active) setActive({...active, muscles: [...new Set([...active.muscles, selectedMuscle])]});
                                     else setActive({id: Date.now(), muscles: [selectedMuscle]});
@@ -306,10 +312,7 @@
                                 <h3 className="text-2xl font-black text-center text-slate-800 mb-8 uppercase italic tracking-tighter">Sesi Selesai</h3>
                                 <div className="space-y-3">
                                     {['Ringan','Sedang','Berat'].map(l => (
-                                        <button key={l} onClick={() => finishWorkout(l)} className="w-full p-5 rounded-[24px] border-2 border-slate-50 font-black text-slate-700 active:bg-blue-600 active:text-white transition-all flex justify-between items-center italic uppercase tracking-tight">
-                                            {l}
-                                            <span className="text-[10px] font-normal opacity-40 italic uppercase tracking-widest">{RECOVERY_CONFIG[l].total}H REC</span>
-                                        </button>
+                                        <button key={l} onClick={() => finishWorkout(l)} className="w-full p-5 rounded-[24px] border-2 border-slate-50 font-black text-slate-700 active:bg-blue-600 active:text-white transition-all flex justify-between items-center italic uppercase tracking-tight">{l}<span className="text-[10px] font-normal opacity-40 italic uppercase tracking-widest">{RECOVERY_CONFIG[l].total}H Rec</span></button>
                                     ))}
                                 </div>
                             </div>
@@ -321,41 +324,19 @@
                             <form onSubmit={handleUpdateWorkout} className="bg-white w-full rounded-[40px] p-8 shadow-2xl space-y-5">
                                 <h3 className="text-xl font-black text-slate-800 border-b pb-4 uppercase italic tracking-tighter">Edit Data</h3>
                                 <div className="space-y-4 font-bold text-slate-700 uppercase text-[10px]">
-                                    <div className="space-y-1">
-                                        <p className="text-slate-300 ml-1 tracking-widest">Otot</p>
-                                        <select name="muscle" defaultValue={editingWorkout.muscle} className="w-full bg-slate-50 p-4 rounded-2xl outline-none font-black text-slate-700 appearance-none border-none">
-                                            {MUSCLES.map(m => <option key={m} value={m}>{m}</option>)}
-                                        </select>
-                                    </div>
-                                    <div className="space-y-1">
-                                        <p className="text-slate-300 ml-1 tracking-widest">Intensitas</p>
-                                        <select name="intensity" defaultValue={editingWorkout.intensity} className="w-full bg-slate-50 p-4 rounded-2xl outline-none font-black text-slate-700 appearance-none border-none">
-                                            {['Ringan','Sedang','Berat'].map(l => <option key={l} value={l}>{l}</option>)}
-                                        </select>
-                                    </div>
-                                    <div className="space-y-1">
-                                        <p className="text-slate-300 ml-1 tracking-widest">Waktu</p>
-                                        <input type="datetime-local" name="endTime" defaultValue={new Date(new Date(editingWorkout.endTime).getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)} className="w-full bg-slate-50 p-4 rounded-2xl outline-none font-black text-slate-700 border-none" />
-                                    </div>
+                                    <div className="space-y-1"><p className="text-slate-300 ml-1 tracking-widest">Otot</p><select name="muscle" defaultValue={editingWorkout.muscle} className="w-full bg-slate-50 p-4 rounded-2xl outline-none font-black text-slate-700 appearance-none border-none">{MUSCLES.map(m => <option key={m} value={m}>{m}</option>)}</select></div>
+                                    <div className="space-y-1"><p className="text-slate-300 ml-1 tracking-widest">Intensitas</p><select name="intensity" defaultValue={editingWorkout.intensity} className="w-full bg-slate-50 p-4 rounded-2xl outline-none font-black text-slate-700 appearance-none border-none">{['Ringan','Sedang','Berat'].map(l => <option key={l} value={l}>{l}</option>)}</select></div>
+                                    <div className="space-y-1"><p className="text-slate-300 ml-1 tracking-widest">Waktu</p><input type="datetime-local" name="endTime" defaultValue={new Date(new Date(editingWorkout.endTime).getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)} className="w-full bg-slate-50 p-4 rounded-2xl outline-none font-black text-slate-700 border-none" /></div>
                                 </div>
-                                <div className="pt-4 flex gap-3 font-black uppercase text-[10px] tracking-widest">
-                                    <button type="button" onClick={() => setEditingWorkout(null)} className="flex-1 text-slate-400">Cancel</button>
-                                    <button type="submit" className="flex-[2] bg-blue-600 text-white py-4 rounded-2xl shadow-lg">Save Changes</button>
-                                </div>
+                                <div className="pt-4 flex gap-3 font-black uppercase text-[10px] tracking-widest"><button type="button" onClick={() => setEditingWorkout(null)} className="flex-1 text-slate-400">Cancel</button><button type="submit" className="flex-[2] bg-blue-600 text-white py-4 rounded-2xl shadow-lg">Save Changes</button></div>
                             </form>
                         </div>
                     )}
 
                     {/* Nav */}
                     <div className="absolute bottom-0 w-full bg-white/90 backdrop-blur-lg border-t border-slate-100 flex justify-around py-5 pb-9 z-40">
-                        <button onClick={() => setTab('home')} className={`flex flex-col items-center transition-all ${tab === 'home' ? 'text-blue-600 scale-125' : 'text-slate-300 opacity-50'}`}>
-                            <i data-lucide="zap" strokeWidth={tab === 'home' ? 3 : 2}></i>
-                            <span className="text-[9px] font-black mt-1.5 uppercase tracking-widest">Status</span>
-                        </button>
-                        <button onClick={() => setTab('history')} className={`flex flex-col items-center transition-all ${tab === 'history' ? 'text-blue-600 scale-125' : 'text-slate-300 opacity-50'}`}>
-                            <i data-lucide="layout-list" strokeWidth={tab === 'history' ? 3 : 2}></i>
-                            <span className="text-[9px] font-black mt-1.5 uppercase tracking-widest">Log</span>
-                        </button>
+                        <button onClick={() => setTab('home')} className={`flex flex-col items-center transition-all ${tab === 'home' ? 'text-blue-600 scale-125' : 'text-slate-300 opacity-50'}`}><i data-lucide="zap" strokeWidth={tab === 'home' ? 3 : 2}></i><span className="text-[9px] font-black mt-1.5 uppercase tracking-widest">Status</span></button>
+                        <button onClick={() => setTab('history')} className={`flex flex-col items-center transition-all ${tab === 'history' ? 'text-blue-600 scale-125' : 'text-slate-300 opacity-50'}`}><i data-lucide="layout-list" strokeWidth={tab === 'history' ? 3 : 2}></i><span className="text-[9px] font-black mt-1.5 uppercase tracking-widest">Log</span></button>
                     </div>
                 </div>
             );
