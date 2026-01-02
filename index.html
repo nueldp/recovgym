@@ -5,12 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>RecovGym Pro - Salatiga</title>
     
-    <!-- PWA Meta -->
+    <!-- PWA Meta Tags -->
     <meta name="theme-color" content="#2563eb">
     <meta name="mobile-web-app-capable" content="yes">
-    <link rel="manifest" href="data:application/json;base64,ewogICJzaG9ydF9uYW1lIjogIlJlY292R3ltIiwKICAi2mFtZSI6ICJSZWNvdkd5bSAtIFJlY292ZXJ5IFRyYWNrZXIiLAogICJpY29ucyI6IFsKICAgIHsKICAgICAgInNyYyI6ICJodHRwczovL2Nkbi1pY29ucy1wbmcuZmxhdGljb24uY29tLzUxMi8yOTY0LzI5NjQ1NjMucG5nIiwKICAgICAgInNpemVzIjogIjUxMng1MTIiLAogICAgICAidHlwZSI6ICJpbWFnZS9wbmciCiAgICB9CiAgXSwKICAic3RhcnRfdXJsIjogIi4iLAogICJkaXNwbGF5IjogInN0YW5kYWxvbmUiLAogICJiYWNrZ3JvdW5kX2NvbG9yIjogIiNmOGZhZmMiLAogICJ0aGVtZV9jb2xvciI6ICIjMjU2M2ViIgp9">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    
+    <!-- Link ke Manifest (Gunakan file eksternal untuk stabilitas) -->
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/2964/2964563.png">
 
-    <!-- Dependencies -->
+    <!-- Dependencies (Akan dicache oleh Service Worker) -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
@@ -22,7 +27,7 @@
         @keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
         .animate-slide-up { animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
         .animate-shake { animation: shake 0.2s ease-in-out 0s 2; }
-        body { -webkit-tap-highlight-color: transparent; user-select: none; font-family: sans-serif; }
+        body { -webkit-tap-highlight-color: transparent; user-select: none; font-family: sans-serif; overflow: hidden; }
         .hide-scrollbar::-webkit-scrollbar { display: none; }
         .scrollbar-hide::-webkit-scrollbar { display: none; }
     </style>
@@ -44,11 +49,11 @@
         function App() {
             const [tab, setTab] = useState('home');
             const [workouts, setWorkouts] = useState(() => {
-                const s = localStorage.getItem('rg_workouts_v4');
+                const s = localStorage.getItem('rg_v5_data');
                 return s ? JSON.parse(s).map(w => ({...w, endTime: new Date(w.endTime)})) : [];
             });
             const [active, setActive] = useState(() => {
-                const s = localStorage.getItem('rg_active_v4');
+                const s = localStorage.getItem('rg_v5_active');
                 return s ? JSON.parse(s) : null;
             });
             
@@ -59,21 +64,17 @@
             const [historyFilter, setHistoryFilter] = useState('Semua');
 
             useEffect(() => {
-                localStorage.setItem('rg_workouts_v4', JSON.stringify(workouts));
-                localStorage.setItem('rg_active_v4', JSON.stringify(active));
+                localStorage.setItem('rg_v5_data', JSON.stringify(workouts));
+                localStorage.setItem('rg_v5_active', JSON.stringify(active));
                 lucide.createIcons();
             }, [workouts, active, tab, editingWorkout, selectedMuscle, showIntensity, lockMessage, historyFilter]);
 
             const formatRecoveryTime = (date) => {
                 const now = new Date();
                 const isToday = date.toDateString() === now.toDateString();
-                const tomorrow = new Date(now);
-                tomorrow.setDate(tomorrow.getDate() + 1);
-                const isTomorrow = date.toDateString() === tomorrow.toDateString();
                 const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                 if (isToday) return `Hari ini ${timeStr}`;
-                if (isTomorrow) return `Besok ${timeStr}`;
-                return date.toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short' }) + ` ${timeStr}`;
+                return date.toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric' }) + ` ${timeStr}`;
             };
 
             const getStatus = (m) => {
@@ -83,185 +84,85 @@
                 
                 const hrsSince = (new Date() - new Date(last.endTime)) / 3600000;
                 const cfg = RECOVERY_CONFIG[last.intensity] || RECOVERY_CONFIG['Sedang'];
-                
-                const canTrainAt = new Date(new Date(last.endTime).getTime() + cfg.half * 3600000);
-                const optimalAt = new Date(new Date(last.endTime).getTime() + cfg.total * 3600000);
                 const remainingToOptimal = cfg.total - hrsSince;
 
                 if (hrsSince < cfg.half) return { 
                     label: 'Recovery', color: 'text-red-500', dot: 'bg-red-500', 
-                    h: Math.floor(hrsSince), isLocked: true, priority: 2,
-                    remainingToOptimal,
-                    nextPhase: `Siap: ${formatRecoveryTime(canTrainAt)}`,
-                    optimalPhase: `Optimal: ${formatRecoveryTime(optimalAt)}`
+                    h: Math.floor(hrsSince), isLocked: true, priority: 2, remainingToOptimal,
+                    nextPhase: `Siap: ${formatRecoveryTime(new Date(last.endTime.getTime() + cfg.half * 3600000))}`,
+                    optimalPhase: `Optimal: ${formatRecoveryTime(new Date(last.endTime.getTime() + cfg.total * 3600000))}`
                 };
                 if (hrsSince < cfg.total) return { 
                     label: 'Hampir Siap', color: 'text-yellow-600', dot: 'bg-yellow-500', 
-                    h: Math.floor(hrsSince), isLocked: false, priority: 1,
-                    remainingToOptimal,
-                    optimalPhase: `Optimal: ${formatRecoveryTime(optimalAt)}`
+                    h: Math.floor(hrsSince), isLocked: false, priority: 1, remainingToOptimal,
+                    optimalPhase: `Optimal: ${formatRecoveryTime(new Date(last.endTime.getTime() + cfg.total * 3600000))}`
                 };
                 return { label: 'Optimal', color: 'text-green-500', dot: 'bg-green-500', h: Math.floor(hrsSince), isLocked: false, priority: 0 };
             };
 
-            // Sorting Logika Utama
             const sortedMuscles = useMemo(() => {
                 return [...MUSCLE_BASE].sort((a, b) => {
-                    const statusA = getStatus(a);
-                    const statusB = getStatus(b);
-                    
-                    // 1. Urutkan berdasarkan priority (0: Green, 1: Yellow, 2: Red)
-                    if (statusA.priority !== statusB.priority) {
-                        return statusA.priority - statusB.priority;
-                    }
-                    
-                    // 2. Jika sama-sama Merah atau Kuning, urutkan berdasarkan waktu pemulihan sisa
-                    // Yang paling sebentar lagi siap (remainingToOptimal terkecil) berada di atas di dalam grupnya
-                    if (statusA.remainingToOptimal !== undefined && statusB.remainingToOptimal !== undefined) {
-                        return statusA.remainingToOptimal - statusB.remainingToOptimal;
-                    }
-                    
-                    // 3. Jika sama-sama Hijau, urutkan berdasarkan yang paling lama tidak dilatih (paling optimal)
-                    if (statusA.priority === 0 && statusB.priority === 0) {
-                        return (statusB.h || 0) - (statusA.h || 0);
-                    }
-                    
-                    return 0;
+                    const sA = getStatus(a);
+                    const sB = getStatus(b);
+                    if (sA.priority !== sB.priority) return sA.priority - sB.priority;
+                    if (sA.remainingToOptimal !== undefined && sB.remainingToOptimal !== undefined) return sA.remainingToOptimal - sB.remainingToOptimal;
+                    return (sB.h || 0) - (sA.h || 0);
                 });
             }, [workouts]);
 
-            const finishWorkout = (intensity) => {
-                const newEntries = active.muscles.map(m => ({
-                    id: Math.random().toString(36).substr(2, 9),
-                    muscle: m,
-                    endTime: new Date(),
-                    intensity
-                }));
-                setWorkouts([...workouts, ...newEntries]);
-                setActive(null);
-                setShowIntensity(false);
-            };
-
-            const handleUpdateWorkout = (e) => {
-                e.preventDefault();
-                const formData = new FormData(e.target);
-                const updated = {
-                    ...editingWorkout,
-                    muscle: formData.get('muscle'),
-                    intensity: formData.get('intensity'),
-                    endTime: new Date(formData.get('endTime'))
-                };
-                setWorkouts(workouts.map(w => w.id === updated.id ? updated : w));
-                setEditingWorkout(null);
-            };
-
-            const handleMuscleClick = (m, status) => {
-                if (status.isLocked) {
-                    setLockMessage(`OTOT ${m.toUpperCase()} MASIH RECOVERY!`);
-                    setTimeout(() => setLockMessage(null), 3000);
-                    return;
-                }
-                setSelectedMuscle(m);
-            };
-
-            const exportToCSV = () => {
+            const exportCSV = () => {
                 if (workouts.length === 0) return;
-                const headers = ['ID', 'Otot', 'Intensitas', 'Waktu Selesai'];
-                const rows = workouts.map(w => [w.id, w.muscle, w.intensity, `"${new Date(w.endTime).toLocaleString('id-ID')}"`]);
-                const csvContent = "\uFEFF" + [headers.join(","), ...rows.map(e => e.join(","))].join("\n");
-                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                const headers = ['Otot', 'Intensitas', 'Waktu Selesai'];
+                const rows = workouts.map(w => [w.muscle, w.intensity, `"${new Date(w.endTime).toLocaleString('id-ID')}"`]);
+                const csv = "\uFEFF" + [headers.join(","), ...rows.map(e => e.join(","))].join("\n");
+                const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
                 const url = URL.createObjectURL(blob);
-                const link = document.body.appendChild(document.createElement("a"));
-                link.href = url;
-                link.download = `RecovGym_Log_${new Date().toLocaleDateString('id-ID').replace(/\//g, '-')}.csv`;
-                link.click();
-                setTimeout(() => { URL.revokeObjectURL(url); link.remove(); }, 500);
+                const a = document.body.appendChild(document.createElement("a"));
+                a.href = url;
+                a.download = `RecovGym_Log_${new Date().toISOString().split('T')[0]}.csv`;
+                a.click();
+                setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 500);
             };
-
-            const filteredWorkouts = useMemo(() => {
-                if (historyFilter === 'Semua') return [...workouts].reverse();
-                return workouts.filter(w => w.muscle === historyFilter).reverse();
-            }, [workouts, historyFilter]);
 
             return (
-                <div className="max-w-md mx-auto min-h-screen bg-white shadow-2xl flex flex-col relative overflow-hidden">
-                    
-                    {lockMessage && (
-                        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[100] w-64 bg-red-600 text-white text-[10px] font-black uppercase tracking-widest p-4 rounded-2xl shadow-xl text-center animate-shake border-b-4 border-red-800">
-                            {lockMessage}
-                        </div>
-                    )}
+                <div className="max-w-md mx-auto h-screen bg-white shadow-2xl flex flex-col relative overflow-hidden">
+                    {lockMessage && <div className="fixed top-12 left-1/2 -translate-x-1/2 z-[100] w-64 bg-red-600 text-white text-[10px] font-black p-4 rounded-2xl shadow-xl text-center animate-shake uppercase">{lockMessage}</div>}
 
-                    <div className="p-6 pb-4 flex justify-between items-center border-b border-slate-50">
+                    <div className="p-6 pb-4 flex justify-between items-center border-b border-slate-50 flex-shrink-0">
                         <div>
                             <h1 className="text-2xl font-black italic text-blue-600 tracking-tighter uppercase leading-none">RecovGym</h1>
-                            <p className="text-[10px] font-bold text-slate-400 tracking-widest uppercase mt-1 italic">Train • Recover • Repeat</p>
+                            <p className="text-[9px] font-bold text-slate-300 tracking-widest uppercase mt-1 italic">Off-grid Ready</p>
                         </div>
-                        <div className="bg-blue-600 p-2.5 rounded-2xl text-white shadow-lg">
-                            <i data-lucide="dumbbell" size="20"></i>
-                        </div>
+                        <div className="bg-blue-600 p-2.5 rounded-2xl text-white"><i data-lucide="zap" size="20"></i></div>
                     </div>
 
                     <div className="flex-1 overflow-y-auto hide-scrollbar pb-32">
                         {tab === 'home' ? (
                             <div className="p-5 space-y-4">
                                 {active && (
-                                    <div className="bg-gradient-to-br from-blue-600 to-blue-700 rounded-[32px] p-6 text-white shadow-xl shadow-blue-100">
-                                        <div className="flex justify-between items-start mb-4">
-                                            <div>
-                                                <p className="text-[10px] font-black uppercase opacity-60 tracking-widest">Sesi Aktif</p>
-                                                <h2 className="text-2xl font-bold italic tracking-tight uppercase leading-none">{active.muscles.join(' + ')}</h2>
-                                            </div>
-                                            <div className="animate-spin-slow text-blue-200"><i data-lucide="loader-2" size="18"></i></div>
-                                        </div>
-                                        <button onClick={() => setShowIntensity(true)} className="w-full bg-white text-blue-600 py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-sm active:scale-95 transition-transform">Selesaikan Sesi</button>
+                                    <div className="bg-blue-600 rounded-[32px] p-6 text-white shadow-xl">
+                                        <p className="text-[9px] font-black uppercase opacity-60 mb-1">Sesi Aktif</p>
+                                        <h2 className="text-2xl font-bold italic uppercase mb-4">{active.muscles.join(' + ')}</h2>
+                                        <button onClick={() => setShowIntensity(true)} className="w-full bg-white text-blue-600 py-4 rounded-2xl font-black text-xs uppercase shadow-sm active:scale-95 transition-transform">Selesai</button>
                                     </div>
                                 )}
-
                                 <div className="grid gap-3">
-                                    <div className="flex justify-between items-center px-1">
-                                        <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest italic">Urutan Latihan Terbaik</h3>
-                                    </div>
-                                    
                                     {sortedMuscles.map(m => {
                                         const s = getStatus(m);
                                         return (
-                                            <div 
-                                                key={m} 
-                                                onClick={() => handleMuscleClick(m, s)} 
-                                                className={`p-5 rounded-[24px] flex justify-between items-center border transition-all duration-300 ${
-                                                    s.isLocked 
-                                                    ? 'bg-slate-50 border-transparent opacity-60' 
-                                                    : 'bg-white border-slate-100 shadow-sm active:border-blue-100 active:bg-blue-50/30'
-                                                }`}
-                                            >
-                                                <div className="flex items-center gap-4 w-full">
-                                                    <div className={`w-3 h-3 rounded-full flex-shrink-0 ${s.dot} shadow-sm`}></div>
-                                                    <div className="text-left flex-1">
+                                            <div key={m} onClick={() => s.isLocked ? (setLockMessage(`Otot ${m} Recovery!`), setTimeout(()=>setLockMessage(null),2000)) : setSelectedMuscle(m)} className={`p-5 rounded-[24px] border transition-all ${s.isLocked ? 'bg-slate-50 border-transparent opacity-60' : 'bg-white border-slate-100 shadow-sm active:bg-blue-50/30'}`}>
+                                                <div className="flex items-center gap-4">
+                                                    <div className={`w-3 h-3 rounded-full flex-shrink-0 ${s.dot}`}></div>
+                                                    <div className="flex-1">
                                                         <div className="flex justify-between items-center">
-                                                            <p className={`font-bold text-lg italic uppercase tracking-tighter ${s.isLocked ? 'text-slate-400' : 'text-slate-800'}`}>{m}</p>
-                                                            <div className={`p-1.5 rounded-lg ${s.isLocked ? 'text-slate-300' : 'text-blue-500'}`}>
-                                                                <i data-lucide={s.isLocked ? "lock" : "plus"} size={14}></i>
-                                                            </div>
+                                                            <p className={`font-bold text-lg italic uppercase ${s.isLocked ? 'text-slate-400' : 'text-slate-800'}`}>{m}</p>
+                                                            <i data-lucide={s.isLocked ? "lock" : "plus"} size={14} className={s.isLocked ? 'text-slate-200' : 'text-blue-500'}></i>
                                                         </div>
-                                                        <p className={`text-[10px] font-black uppercase ${s.color} tracking-tighter leading-none mt-0.5`}>
-                                                            {s.label} {s.h !== null ? `• ${s.h}J Lalu` : ''}
-                                                        </p>
-                                                        
+                                                        <p className={`text-[10px] font-black uppercase ${s.color} mt-0.5`}>{s.label} {s.h !== null ? `• ${s.h}J Lalu` : ''}</p>
                                                         {(s.nextPhase || s.optimalPhase) && (
-                                                            <div className="mt-3 space-y-1 bg-white/50 p-2 rounded-xl border border-slate-100/50">
-                                                                {s.nextPhase && (
-                                                                    <div className="flex items-center gap-1.5 text-slate-400">
-                                                                        <i data-lucide="clock" size={10}></i>
-                                                                        <span className="text-[9px] font-bold uppercase tracking-tighter">{s.nextPhase}</span>
-                                                                    </div>
-                                                                )}
-                                                                {s.optimalPhase && (
-                                                                    <div className="flex items-center gap-1.5 text-blue-400">
-                                                                        <i data-lucide="zap" size={10}></i>
-                                                                        <span className="text-[9px] font-bold uppercase tracking-tighter">{s.optimalPhase}</span>
-                                                                    </div>
-                                                                )}
+                                                            <div className="mt-3 space-y-1 bg-white/50 p-2 rounded-xl border border-slate-100/30 text-[9px] font-bold uppercase tracking-tighter">
+                                                                {s.nextPhase && <div className="text-slate-400 flex items-center gap-1.5"><i data-lucide="clock" size={10}></i>{s.nextPhase}</div>}
+                                                                {s.optimalPhase && <div className="text-blue-400 flex items-center gap-1.5"><i data-lucide="star" size={10}></i>{s.optimalPhase}</div>}
                                                             </div>
                                                         )}
                                                     </div>
@@ -272,101 +173,78 @@
                                 </div>
                             </div>
                         ) : (
-                            <div className="flex flex-col">
-                                <div className="p-5 space-y-4">
-                                    <div className="flex justify-between items-center">
-                                        <h2 className="text-2xl font-black italic text-slate-800 tracking-tight uppercase">Logbook</h2>
-                                        <button onClick={exportToCSV} className="flex items-center gap-1.5 bg-green-600 text-white px-3 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest active:scale-95 transition-all shadow-md italic">
-                                            <i data-lucide="download" size="14"></i> CSV
-                                        </button>
-                                    </div>
-                                    <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-2 -mx-1 px-1">
-                                        {['Semua', ...MUSCLE_BASE].map(m => (
-                                            <button key={m} onClick={() => setHistoryFilter(m)} className={`px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest whitespace-nowrap border-2 transition-all ${historyFilter === m ? 'bg-blue-600 border-blue-600 text-white shadow-lg' : 'bg-white border-slate-100 text-slate-400'}`}>
-                                                {m}
-                                            </button>
-                                        ))}
-                                    </div>
+                            <div className="p-5 flex flex-col h-full">
+                                <div className="flex justify-between items-center mb-6">
+                                    <h2 className="text-2xl font-black italic text-slate-800 uppercase tracking-tight">Riwayat</h2>
+                                    <button onClick={exportCSV} className="bg-green-600 text-white px-4 py-2 rounded-xl font-black text-[10px] uppercase shadow-md active:scale-95 transition-all"><i data-lucide="download" size="14" className="inline mr-1"></i> CSV</button>
                                 </div>
-                                <div className="px-5 space-y-3">
-                                    {filteredWorkouts.length === 0 ? (
-                                        <div className="text-center py-20 opacity-20 italic font-bold uppercase text-[10px]"><i data-lucide="database" size="40" className="mx-auto mb-2 opacity-50"></i><p>Data Kosong</p></div>
-                                    ) : (
-                                        filteredWorkouts.map(w => (
-                                            <div key={w.id} className="bg-white border border-slate-50 p-5 rounded-[24px] flex justify-between items-center shadow-sm">
-                                                <div className="flex items-center gap-4">
-                                                    <div className={`w-1 h-8 rounded-full ${w.intensity === 'Berat' ? 'bg-red-500' : w.intensity === 'Sedang' ? 'bg-yellow-500' : 'bg-green-500'}`}></div>
-                                                    <div>
-                                                        <p className="font-bold text-slate-800 italic uppercase tracking-tight leading-none">{w.muscle}</p>
-                                                        <p className="text-[10px] text-slate-400 font-bold uppercase mt-1 leading-none tracking-tighter">{w.intensity} • {new Date(w.endTime).toLocaleDateString('id-ID', {day:'numeric', month:'short'})} {new Date(w.endTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</p>
-                                                    </div>
-                                                </div>
-                                                <div className="flex gap-1">
-                                                    <button onClick={() => setEditingWorkout(w)} className="p-2.5 text-slate-300 active:text-blue-500 transition-colors"><i data-lucide="edit-3" size="18"></i></button>
-                                                    <button onClick={() => setWorkouts(workouts.filter(x => x.id !== w.id))} className="p-2.5 text-slate-300 active:text-red-500 transition-colors"><i data-lucide="trash-2" size="18"></i></button>
+                                <div className="flex gap-2 overflow-x-auto scrollbar-hide mb-4 -mx-1 px-1">
+                                    {['Semua', ...MUSCLE_BASE].map(m => (
+                                        <button key={m} onClick={() => setHistoryFilter(m)} className={`px-4 py-2 rounded-full text-[10px] font-black uppercase whitespace-nowrap border-2 transition-all ${historyFilter === m ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white border-slate-100 text-slate-400'}`}>{m}</button>
+                                    ))}
+                                </div>
+                                <div className="space-y-3">
+                                    {workouts.filter(w => historyFilter === 'Semua' || w.muscle === historyFilter).reverse().map(w => (
+                                        <div key={w.id} className="bg-white border border-slate-50 p-5 rounded-[24px] flex justify-between items-center shadow-sm">
+                                            <div className="flex items-center gap-4">
+                                                <div className={`w-1 h-8 rounded-full ${w.intensity === 'Berat' ? 'bg-red-500' : w.intensity === 'Sedang' ? 'bg-yellow-500' : 'bg-green-500'}`}></div>
+                                                <div>
+                                                    <p className="font-bold text-slate-800 italic uppercase leading-none">{w.muscle}</p>
+                                                    <p className="text-[10px] text-slate-400 font-bold uppercase mt-1">{w.intensity} • {new Date(w.endTime).toLocaleDateString('id-ID', {day:'numeric', month:'short'})}</p>
                                                 </div>
                                             </div>
-                                        ))
-                                    )}
+                                            <button onClick={() => setWorkouts(workouts.filter(x => x.id !== w.id))} className="p-2.5 text-slate-200 active:text-red-500"><i data-lucide="trash-2" size="18"></i></button>
+                                        </div>
+                                    ))}
                                 </div>
                             </div>
                         )}
                     </div>
 
-                    {/* Modals & Bottom Nav - Same but refined */}
+                    <div className="absolute bottom-0 w-full bg-white border-t border-slate-50 flex justify-around py-5 pb-9 z-40">
+                        <button onClick={() => setTab('home')} className={`flex flex-col items-center transition-all ${tab === 'home' ? 'text-blue-600 scale-125' : 'text-slate-300 opacity-50'}`}><i data-lucide="layout-grid" strokeWidth={3}></i></button>
+                        <button onClick={() => setTab('history')} className={`flex flex-col items-center transition-all ${tab === 'history' ? 'text-blue-600 scale-125' : 'text-slate-300 opacity-50'}`}><i data-lucide="list" strokeWidth={3}></i></button>
+                    </div>
+
                     {selectedMuscle && (
                         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-end" onClick={() => setSelectedMuscle(null)}>
                             <div className="bg-white w-full rounded-t-[40px] p-8 animate-slide-up" onClick={e => e.stopPropagation()}>
                                 <div className="w-12 h-1 bg-slate-100 rounded-full mx-auto mb-8"></div>
-                                <h3 className="text-3xl font-black italic text-slate-800 mb-2 uppercase tracking-tighter italic">Latih {selectedMuscle}?</h3>
-                                <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest mb-8 italic">"Otot siap memberikan performa puncak."</p>
-                                <button onClick={() => {
-                                    if (active) setActive({...active, muscles: [...new Set([...active.muscles, selectedMuscle])]});
-                                    else setActive({id: Date.now(), muscles: [selectedMuscle]});
-                                    setSelectedMuscle(null);
-                                    setTab('home');
-                                }} className="w-full bg-blue-600 text-white py-5 rounded-[24px] font-black text-lg shadow-xl shadow-blue-100 active:scale-95 transition-all uppercase italic tracking-tighter">Mulai Sesi</button>
+                                <h3 className="text-3xl font-black italic text-slate-800 mb-6 uppercase tracking-tighter italic">Latih {selectedMuscle}?</h3>
+                                <button onClick={() => { active ? setActive({...active, muscles: [...new Set([...active.muscles, selectedMuscle])]}) : setActive({id: Date.now(), muscles: [selectedMuscle]}); setSelectedMuscle(null); setTab('home'); }} className="w-full bg-blue-600 text-white py-5 rounded-[24px] font-black text-lg shadow-xl shadow-blue-100 active:scale-95 transition-all uppercase italic">Mulai</button>
                             </div>
                         </div>
                     )}
 
                     {showIntensity && (
-                        <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-md z-50 flex items-center p-6">
-                            <div className="bg-white w-full rounded-[40px] p-8 shadow-2xl">
+                        <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-md z-50 flex items-center p-6" onClick={() => setShowIntensity(false)}>
+                            <div className="bg-white w-full rounded-[40px] p-8 shadow-2xl" onClick={e => e.stopPropagation()}>
                                 <h3 className="text-2xl font-black text-center text-slate-800 mb-8 uppercase italic tracking-tighter italic">Sesi Selesai</h3>
                                 <div className="space-y-3">
                                     {['Ringan','Sedang','Berat'].map(l => (
-                                        <button key={l} onClick={() => finishWorkout(l)} className="w-full p-5 rounded-[24px] border-2 border-slate-50 font-black text-slate-700 active:bg-blue-600 active:text-white transition-all flex justify-between items-center italic uppercase tracking-tight">{l}<span className="text-[10px] font-normal opacity-40 italic uppercase tracking-widest">{RECOVERY_CONFIG[l].total}H Rec</span></button>
+                                        <button key={l} onClick={() => finishWorkout(l)} className="w-full p-5 rounded-[24px] border-2 border-slate-50 font-black text-slate-700 active:bg-blue-600 active:text-white transition-all flex justify-between items-center italic uppercase tracking-tight">{l}<span className="text-[10px] font-normal opacity-40 italic uppercase">{RECOVERY_CONFIG[l].total}H</span></button>
                                     ))}
                                 </div>
                             </div>
                         </div>
                     )}
-
-                    {editingWorkout && (
-                        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[60] flex items-center p-6">
-                            <form onSubmit={handleUpdateWorkout} className="bg-white w-full rounded-[40px] p-8 shadow-2xl space-y-5">
-                                <h3 className="text-xl font-black text-slate-800 border-b pb-4 uppercase italic tracking-tighter italic">Edit Data</h3>
-                                <div className="space-y-4 font-bold text-slate-700 uppercase text-[10px]">
-                                    <div className="space-y-1"><p className="text-slate-300 ml-1 tracking-widest">Otot</p><select name="muscle" defaultValue={editingWorkout.muscle} className="w-full bg-slate-50 p-4 rounded-2xl outline-none font-black text-slate-700 appearance-none border-none">{MUSCLE_BASE.map(m => <option key={m} value={m}>{m}</option>)}</select></div>
-                                    <div className="space-y-1"><p className="text-slate-300 ml-1 tracking-widest">Intensitas</p><select name="intensity" defaultValue={editingWorkout.intensity} className="w-full bg-slate-50 p-4 rounded-2xl outline-none font-black text-slate-700 appearance-none border-none">{['Ringan','Sedang','Berat'].map(l => <option key={l} value={l}>{l}</option>)}</select></div>
-                                    <div className="space-y-1"><p className="text-slate-300 ml-1 tracking-widest">Waktu</p><input type="datetime-local" name="endTime" defaultValue={new Date(new Date(editingWorkout.endTime).getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)} className="w-full bg-slate-50 p-4 rounded-2xl outline-none font-black text-slate-700 border-none" /></div>
-                                </div>
-                                <div className="pt-4 flex gap-3 font-black uppercase text-[10px] tracking-widest"><button type="button" onClick={() => setEditingWorkout(null)} className="flex-1 text-slate-400">Batal</button><button type="submit" className="flex-[2] bg-blue-600 text-white py-4 rounded-2xl shadow-lg">Simpan</button></div>
-                            </form>
-                        </div>
-                    )}
-
-                    <div className="absolute bottom-0 w-full bg-white/90 backdrop-blur-lg border-t border-slate-100 flex justify-around py-5 pb-9 z-40">
-                        <button onClick={() => setTab('home')} className={`flex flex-col items-center transition-all ${tab === 'home' ? 'text-blue-600 scale-125' : 'text-slate-300 opacity-50'}`}><i data-lucide="zap" strokeWidth={tab === 'home' ? 3 : 2}></i><span className="text-[9px] font-black mt-1.5 uppercase tracking-widest">Status</span></button>
-                        <button onClick={() => setTab('history')} className={`flex flex-col items-center transition-all ${tab === 'history' ? 'text-blue-600 scale-125' : 'text-slate-300 opacity-50'}`}><i data-lucide="clipboard-list" strokeWidth={tab === 'history' ? 3 : 2}></i><span className="text-[9px] font-black mt-1.5 uppercase tracking-widest">Log</span></button>
-                    </div>
                 </div>
             );
         }
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<App />);
+
+        // Register Service Worker for Offline
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('sw.js').then(reg => {
+                    console.log('SW Registered', reg);
+                }).catch(err => {
+                    console.log('SW Failed', err);
+                });
+            });
+        }
     </script>
 </body>
 </html>
